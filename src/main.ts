@@ -73,44 +73,84 @@ export class LuckyExcel {
 
     static transformExcelToUniver(
         excelFile: File,
-        callback?: (files: IWorkbookData, fs?: string) => void,
+        callback?: (files: IWorkbookData, fs?: { raw: string; chunks: any }) => void,
         errorHandler?: (err: Error) => void
     ) {
         let handleZip: HandleZip = new HandleZip(excelFile);
 
-        handleZip.unzipFile(function (files: IuploadfileList) {
-            console.log('input------>', files);
-            let luckyFile = new LuckyFile(files, excelFile.name);
-            let luckysheetfile = luckyFile.Parse();
-            let exportJson = JSON.parse(luckysheetfile);
-            console.log('output---->', exportJson, files)
-            if (callback != undefined) {
-                const univerData = new UniverWorkBook(exportJson)
-                callback(univerData.mode, luckysheetfile);
-            }
-        },
+        handleZip.unzipFile(
+            function (files: IuploadfileList) {
+                try {
+                    console.log("input------>", files);
+                    let luckyFile = new LuckyFile(files, excelFile.name);
+                    let luckysheetfile = luckyFile.Parse();     
+                    let exportJson = JSON.parse(luckysheetfile);
+
+                    // 🔹 chunk per sheet
+                    const chunkSize = 500; // adjust as needed
+                    exportJson.sheets.forEach((sheet: any) => {
+                        const rows = sheet.data || [];
+                        const chunks: any[][] = [];
+                        for (let i = 0; i < rows.length; i += chunkSize) {
+                            chunks.push(rows.slice(i, i + chunkSize));
+                        }
+                        sheet.dataChunks = chunks;
+                    });
+
+                    console.log("output---->", exportJson, files);
+                    if (callback) {
+                        const univerData = new UniverWorkBook(exportJson);
+                        callback(univerData.mode, {
+                            raw: luckysheetfile,
+                            chunks: exportJson.sheets.map((s: any) => ({
+                                id: s.id,
+                                name: s.name,
+                                chunks: s.dataChunks,
+                            })),
+                        });
+                    }
+                } catch (err) {
+                    errorHandler?.(err as Error);
+                }
+            },
             function (err: Error) {
                 if (errorHandler) {
                     errorHandler(err);
                 } else {
                     console.error(err);
                 }
-            });
+            }
+        );
     }
 
     static transformCsvToUniver(
         file: File,
-        callback?: (files: IWorkbookData, fs?: string[][]) => void,
+        callback?: (files: IWorkbookData, fs?: { full: string[][]; chunks: string[][][] }) => void,
         errorHandler?: (err: Error) => void
     ) {
         try {
             getDataByFile({ file }).then((source) => {
-                const sheetData = formatSheetData(source, file)!;
-                const univerData = new UniverCsvWorkBook(sheetData || [])
-                callback?.(univerData.mode, sheetData);
-            })
+                try {
+                    const sheetData = formatSheetData(source, file)!;
+
+                    // 🔹 chunk rows
+                    const chunkSize = 500;
+                    const chunks: string[][][] = [];
+                    for (let i = 0; i < sheetData.length; i += chunkSize) {
+                        chunks.push(sheetData.slice(i, i + chunkSize));
+                    }
+
+                    const univerData = new UniverCsvWorkBook(sheetData || []);
+                    callback?.(univerData.mode, {
+                        full: sheetData,
+                        chunks,
+                    });
+                } catch (err) {
+                    errorHandler?.(err as Error);
+                }
+            });
         } catch (error) {
-            errorHandler(error);
+            errorHandler?.(error as Error);
         }
     }
 
