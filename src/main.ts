@@ -85,6 +85,8 @@ export class LuckyExcel {
                     let luckyFile = new LuckyFile(files, excelFile.name);
                     let luckysheetfile = luckyFile.Parse();     
                     let exportJson = JSON.parse(luckysheetfile);
+                    console.log("export JSON: ", exportJson);
+                    
 
                     // 🔹 chunk per sheet
                     const chunkSize = 500; // adjust as needed
